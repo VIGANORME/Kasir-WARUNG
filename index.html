@@ -166,7 +166,7 @@ body{
 
 .summary{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .row-between{display:flex;justify-content:space-between;align-items:center}
-.input input{padding:12px;border-radius:12px;border:1px solid rgba(15,31,86,0.06);outline:0;background:transparent}
+.input input{padding:12px;border-radius:12px;border:1px solid rgba(15,31,86,0.06);outline:0;background:transparent;width:100%;margin-bottom:8px;}
 
 .paybar{position:sticky;bottom:18px;background:linear-gradient(180deg,#fff,rgba(255,255,255,0.95));padding:12px;border-radius:14px;border:1px solid rgba(15,31,86,0.04)}
 .pay-button{flex:1;padding:12px;border-radius:12px;border:0;background:linear-gradient(90deg,#2e64ff,#4d73ff);color:white;font-weight:800;cursor:pointer}
@@ -190,7 +190,6 @@ body{
 
 <div class="app">
 
-  <!-- HEADER -->
   <div class="header">
     <div class="brand">
       <div class="logo">KW</div>
@@ -212,7 +211,6 @@ body{
     </div>
   </div>
 
-  <!-- PRODUCTS -->
   <div class="products" id="productArea">
     <h3>Produk</h3>
     <div class="grid" id="productGrid"></div>
@@ -221,7 +219,6 @@ body{
     </div>
   </div>
 
-  <!-- RIGHT PANEL -->
   <div class="right">
     <div class="panel">
       <div class="cart-head">
@@ -265,7 +262,6 @@ body{
   </div>
 </div>
 
-<!-- MODAL ROOT -->
 <div id="modalRoot" style="display:none"></div>
 <div id="print-only" style="display:none"></div>
 
@@ -279,6 +275,13 @@ let products = load('products',[])
 let cart = load('cart',[])
 let transactions = load('transactions',[])
 let isDark = load('kasir_dark_mode', false)
+
+/* PATCH: Inisialisasi properti 'sold' pada produk jika belum ada, default 0 */
+products = products.map(p => ({
+  ...p,
+  sold: p.sold === undefined ? 0 : p.sold
+}));
+save('products', products);
 
 document.documentElement.classList.toggle('dark', !!isDark)
 
@@ -297,9 +300,12 @@ function renderProducts(list){
     const div = document.createElement('div')
     div.className = 'card'
     div.dataset.index = i
+
+    /* PATCH: Tambahkan jumlah sold ke dalam card */
     div.innerHTML = `
       <div class="name">${p.name}</div>
       <div class="price">Rp ${rp(p.price)}</div>
+      <div style="font-size:11px; color:var(--success); font-weight:600">Terjual: ${p.sold}</div>
       <div class="del-btn">×</div>
     `
 
@@ -320,7 +326,8 @@ function renderProducts(list){
       div.classList.remove('pressed')
       if(timer) clearTimeout(timer)
       if(!longPressed){
-        addToCart(i)
+        const productIndex = products.findIndex(item => item.name === p.name);
+        addToCart(productIndex)
       }
     }
     function onPointerLeave(){
@@ -337,7 +344,8 @@ function renderProducts(list){
     const delBtn = div.querySelector('.del-btn')
     delBtn.addEventListener('click', (ev)=>{
       ev.stopPropagation()
-      const idx = Number(div.dataset.index)
+      // Cari index produk di array products asli, karena list bisa hasil filter
+      const idx = products.findIndex(item => item.name === p.name) 
       if(confirm('Hapus menu "'+products[idx].name+'"?')){
         deleteProduct(idx)
       } else {
@@ -355,11 +363,52 @@ function deleteProduct(i){
   refreshUI()
 }
 
+/* PATCH: Fungsi untuk menampilkan Best Sellers */
+function renderBestSellers() {
+  const productArea = document.getElementById('productArea');
+  let bestSellerDiv = document.getElementById('bestSellerSection');
+
+  // Urutkan produk berdasarkan jumlah terjual (sold) secara menurun
+  const bestSellers = [...products].sort((a, b) => b.sold - a.sold).slice(0, 3);
+  
+  // Jika belum ada, buat elemen Best Seller
+  if (!bestSellerDiv) {
+    bestSellerDiv = document.createElement('div');
+    bestSellerDiv.id = 'bestSellerSection';
+    bestSellerDiv.style.marginBottom = '18px';
+    // Sisipkan sebelum <h3>Produk</h3>
+    productArea.insertBefore(bestSellerDiv, productArea.children[0]); 
+  }
+
+  // Hanya tampilkan jika ada produk yang terjual (sold > 0)
+  const filteredBestSellers = bestSellers.filter(p => p.sold > 0);
+
+  if (filteredBestSellers.length === 0) {
+    bestSellerDiv.style.display = 'none';
+    return;
+  }
+  
+  bestSellerDiv.style.display = 'block';
+
+  bestSellerDiv.innerHTML = `
+    <h3 style="margin-top:0">⭐ Best Seller</h3>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));">
+      ${filteredBestSellers.map(p => `
+        <div class="card" style="padding:8px; display:block; background:rgba(77,115,255,0.06); border-color:rgba(77,115,255,0.12)">
+          <div class="name" style="font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${p.name}</div>
+          <div style="font-size:11px; color:var(--muted)">Terjual: <span style="font-weight:700; color:var(--text)">${p.sold}</span></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 /* UI refresh */
 function refreshUI(){
   renderProducts(products)
   renderCart()
   updateIncome()
+  renderBestSellers() // PATCH: Panggil Best Seller saat refresh
   document.getElementById('payTotal').textContent = rp(calcTotal())
 }
 
@@ -376,7 +425,7 @@ function renderAddMenu(){
       <input id="mname" placeholder="Nama menu" />
       <input id="mprice" type="number" placeholder="Harga" />
       <div style="display:flex;gap:8px">
-        <button onclick="saveMenuModal()">Simpan</button>
+        <button class="add-btn" onclick="saveMenuModal()">Simpan</button>
         <button onclick="closeModal()">Batal</button>
       </div>
     </div>
@@ -387,7 +436,8 @@ function saveMenuModal(){
   const n = document.getElementById('mname').value.trim()
   const h = Number(document.getElementById('mprice').value)
   if(!n||!h) return alert('Isi nama dan harga')
-  products.push({name:n,price:h})
+  /* PATCH: Tambahkan properti sold: 0 saat menu baru dibuat */
+  products.push({name:n,price:h,sold:0})
   save('products',products)
   closeModal()
   refreshUI()
@@ -445,10 +495,25 @@ function checkout(){
   if(cashValue < total) return alert('Uang kurang')
   const back = cashValue - total
   const time = new Date().toLocaleString('id-ID')
+  
+  /* PATCH: Update jumlah 'sold' pada produk */
+  cart.forEach(cartItem => {
+    const productIndex = products.findIndex(p => p.name === cartItem.name);
+    if (productIndex !== -1) {
+      products[productIndex].sold += cartItem.qty;
+    }
+  });
+  save('products', products);
+  
   transactions.push({ name, total, time, items: cart.map(c=>({...c})) })
   save('transactions', transactions)
   save('cart', [])
   cart = []
+  
+  // Clear input fields after successful checkout
+  document.getElementById('buyer').value = '';
+  document.getElementById('cash').value = '';
+
   renderCart()
   showStruk(name, total, cashValue, back, transactions.at(-1))
   refreshUI()
@@ -474,7 +539,7 @@ function showStruk(nama,total,bayar,kembali,tx){
         <div class="line"><div class="tiny">Kembalian</div><div>Rp ${rp(kembali)}</div></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button onclick="printStruk()">Print</button>
+        <button class="add-btn" onclick="printStruk()">Print</button>
         <button onclick="closeModal()">Tutup</button>
       </div>
     </div>
@@ -483,7 +548,20 @@ function showStruk(nama,total,bayar,kembali,tx){
 function printStruk(){
   const el = document.getElementById('strukArea')
   const w = window.open('','_blank','width=400,height=600')
-  w.document.write(`<html><body>${el.innerHTML}</body></html>`)
+  w.document.write(`<html>
+    <head><style>
+      body{font-family:monospace;font-size:13px;padding:10px}
+      .line{display:flex;justify-content:space-between}
+      .tiny{font-size:11px}
+      hr{border:0;border-top:1px dashed #000;margin:8px 0}
+      h4{text-align:center;margin:0 0 8px 0}
+      @media print {
+        @page { margin: 10mm; }
+        body { padding: 0; }
+      }
+    </style></head>
+    <body>${el.innerHTML}</body>
+  </html>`)
   w.document.close(); w.print(); w.close()
 }
 
@@ -492,7 +570,19 @@ function updateIncome(){
   const now = new Date()
   const m = now.getMonth()+1, y = now.getFullYear()
   const harian = transactions.filter(t=>t.time.startsWith(today)).reduce((s,i)=>s+i.total,0)
-  const bulanan = transactions.filter(t=>{const d=new Date(t.time);return d.getMonth()+1===m && d.getFullYear()===y}).reduce((s,i)=>s+i.total,0)
+  // Menghitung bulanan, menggunakan manipulasi string yang lebih aman berdasarkan format toLocaleString('id-ID')
+  const bulanan = transactions.filter(t=>{
+    const timeParts = t.time.split(',')[0]; 
+    // Format id-ID biasanya d/m/yyyy, kita perlu parse ini
+    const parts = timeParts.split('/');
+    if(parts.length < 3) return false;
+    const [d, mon, year] = parts.map(Number);
+    // Date constructor: new Date(year, monthIndex, day)
+    const dTx = new Date(year, mon - 1, d); 
+    
+    return dTx.getMonth()+1===m && dTx.getFullYear()===y
+  }).reduce((s,i)=>s+i.total,0)
+
   document.getElementById('harian').textContent = 'Rp '+rp(harian)
   document.getElementById('bulanan').textContent = 'Rp '+rp(bulanan)
 }
@@ -522,7 +612,7 @@ function openTransactions(){
 function viewTx(i){
   const t = transactions[i]
   const items = t.items.map(it=>`<div style="display:flex;justify-content:space-between"><div>${it.name} x${it.qty}</div><div>Rp ${rp(it.price*it.qty)}</div></div>`).join('')
-  showModal(`<h3>Transaksi</h3><div class="struk"><div class="line"><div class="tiny">Waktu</div><div>${t.time}</div></div><div class="line"><div class="tiny">Nama</div><div>${t.name}</div></div>${items}<hr/><div class="line"><div>Total</div><div>Rp ${rp(t.total)}</div></div></div><button onclick="printTx(${i})">Print</button><button onclick="closeModal()">Tutup</button>`)
+  showModal(`<h3>Transaksi</h3><div class="struk"><div class="line"><div class="tiny">Waktu</div><div>${t.time}</div></div><div class="line"><div class="tiny">Nama</div><div>${t.name}</div></div>${items}<hr/><div class="line"><div>Total</div><div>Rp ${rp(t.total)}</div></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="add-btn" onclick="printTx(${i})">Print</button><button onclick="closeModal()">Tutup</button></div>`)
 }
 
 function printTx(i){
@@ -542,9 +632,7 @@ function toggleDark(){
 }
 
 /* Init */
-renderProducts(products)
-renderCart()
-updateIncome()
+refreshUI()
 
 </script>
 
